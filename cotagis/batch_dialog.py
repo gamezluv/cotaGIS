@@ -23,9 +23,9 @@ class BatchDialog(QDialog):
         lay = QVBoxLayout(self)
 
         self.cbo_layer = QgsMapLayerComboBox()
-        self.cbo_layer.setFilters(
-            QgsMapLayerProxyModel.LineLayer
-            | QgsMapLayerProxyModel.PolygonLayer)
+        filters = QgsMapLayerProxyModel.LineLayer
+        filters |= QgsMapLayerProxyModel.PolygonLayer
+        self.cbo_layer.setFilters(filters)
         self.chk_sel = QCheckBox("Solo entidades seleccionadas")
         self.chk_sel.setChecked(bool(cfg.get("solo_sel")))
 

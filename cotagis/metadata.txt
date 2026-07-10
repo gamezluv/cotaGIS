@@ -3,10 +3,14 @@ name=CotaGIS
 qgisMinimumVersion=3.16
 description=Acotado estilo AutoCAD con Object Snap: cotas lineales, alineadas, continuas, línea base, angulares, radiales, diametrales, de arco y de coordenadas; acotado por lote de capas. / AutoCAD-style dimensioning with Object Snap: linear, aligned, continuous, baseline, angular, radius, diameter, arc-length and ordinate dimensions; batch layer dimensioning.
 about=Genera cotas estilo CAD (líneas de extensión, línea de cota, ticks o flechas y texto rotado) para todos los segmentos de capas de líneas y polígonos, imitando los comandos DIM/DIMALIGNED de AutoCAD. Incluye etiquetas de área (m²), perímetro/longitud total, ángulos internos en vértices y una herramienta interactiva de cota manual (2 puntos + posición). Las cotas se crean como capas de memoria estilizadas listas para imprimir o exportar. / Creates CAD-style dimensions (extension lines, dimension line, ticks/arrows and rotated text) for every segment of line and polygon layers, mimicking AutoCAD's DIM/DIMALIGNED commands. Includes area labels (m²), perimeter/total length, interior angles and an interactive 3-click manual dimension tool. Dimensions are created as styled memory layers ready to print or export.
-version=1.1.1
+version=1.1.3
 author=Luis Gámez
 email=luisgamezva@gmail.com
-changelog=1.1.1
+changelog=1.1.3
+      - Corregido crash en QGIS 3.32+ al crear cotas: "a member of enum 'LabelPlacement' is expected". Ahora se usan los enums modernos de Qgis.* (LabelPlacement, LabelQuadrantPosition, RenderUnit, SnappingType, SnappingMode, MapToolUnit) con fallback a los alias antiguos para QGIS 3.16+.
+      1.1.2
+      - Limpieza total del escáner del portal: resueltos los 21 avisos informativos de Flake8 (W503 y E241) reportados en la pestaña Security.
+      1.1.1
       - Código endurecido para el escáner de seguridad del portal: 0 hallazgos en Bandit, detect-secrets y Flake8 (sin try/except/pass, sin nombres ambiguos, PEP 8 completo).
       1.1.0
       - Object Snap (OSNAP) configurable: vértice, extremo, punto medio, segmento, centroide e intersección, con tolerancia en píxeles y marcador magnético.

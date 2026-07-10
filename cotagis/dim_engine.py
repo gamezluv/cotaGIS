@@ -20,6 +20,7 @@ import math
 from qgis.PyQt.QtCore import QVariant
 from qgis.PyQt.QtGui import QColor, QFont
 from qgis.core import (
+    Qgis, QgsMessageLog,
     QgsProject, QgsVectorLayer, QgsFeature, QgsGeometry, QgsPointXY,
     QgsField, QgsWkbTypes, QgsDistanceArea, QgsUnitTypes,
     QgsPalLayerSettings, QgsTextFormat, QgsTextBufferSettings,
@@ -29,6 +30,25 @@ from qgis.core import (
 
 GROUP_NAME = "Cotas (CotaGIS)"
 TWO_PI = 2.0 * math.pi
+
+
+def compat_enum(new_holder_name, member, legacy_owner, legacy_name):
+    """Devuelve el enum moderno (Qgis.<holder>.<member>) si existe;
+    si no, el alias antiguo (legacy_owner.legacy_name); si tampoco, None.
+
+    En QGIS 3.32+ algunos alias antiguos (p. ej.
+    QgsPalLayerSettings.OverPoint) resuelven al enum equivocado, por lo
+    que SIEMPRE se prefiere el enum con espacio de nombres de Qgis.
+    """
+    holder = getattr(Qgis, new_holder_name, None)
+    if holder is not None and hasattr(holder, member):
+        return getattr(holder, member)
+    return getattr(legacy_owner, legacy_name, None)
+
+
+def _log(msg):
+    QgsMessageLog.logMessage(msg, "CotaGIS")
+
 
 DEFAULT_CFG = {
     # formato general
@@ -388,10 +408,11 @@ def _circumcenter(p1, pm, p2):
     d = 2.0 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
     if abs(d) < 1e-12:
         return None
-    ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay)
-          + (cx * cx + cy * cy) * (ay - by)) / d
-    uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx)
-          + (cx * cx + cy * cy) * (bx - ax)) / d
+    sq_a = ax * ax + ay * ay
+    sq_b = bx * bx + by * by
+    sq_c = cx * cx + cy * cy
+    ux = (sq_a * (by - cy) + sq_b * (cy - ay) + sq_c * (ay - by)) / d
+    uy = (sq_a * (cx - bx) + sq_b * (ax - cx) + sq_c * (bx - ax)) / d
     return QgsPointXY(ux, uy)
 
 
@@ -494,16 +515,18 @@ def _find_group():
 
 def _find_layer(name):
     for lyr in QgsProject.instance().mapLayers().values():
-        if (lyr.name() == name and isinstance(lyr, QgsVectorLayer)
-                and lyr.isValid()):
+        if not isinstance(lyr, QgsVectorLayer):
+            continue
+        if lyr.name() == name and lyr.isValid():
             return lyr
     return None
 
 
 def get_or_create_dim_layers(crs, prefix, cfg):
     """Devuelve (capa líneas, capa textos, capa flechas)."""
-    authid = (crs.authid() or QgsProject.instance().crs().authid()
-              or "EPSG:4326")
+    authid = crs.authid() or QgsProject.instance().crs().authid()
+    if not authid:
+        authid = "EPSG:4326"
     names = ("%s · líneas de cota" % prefix,
              "%s · textos de cota" % prefix,
              "%s · flechas" % prefix)
@@ -561,27 +584,44 @@ def _style_text_layer(layer, cfg):
 
     settings = QgsPalLayerSettings()
     settings.fieldName = "texto"
-    if hasattr(QgsPalLayerSettings, "OverPoint"):
-        settings.placement = QgsPalLayerSettings.OverPoint
-    if hasattr(QgsPalLayerSettings, "QuadrantOver"):
-        settings.quadOffset = QgsPalLayerSettings.QuadrantOver
+
+    placement = compat_enum(
+        "LabelPlacement", "OverPoint", QgsPalLayerSettings, "OverPoint")
+    if placement is not None:
+        try:
+            settings.placement = placement
+        except (TypeError, ValueError) as exc:
+            _log("placement OverPoint no aplicado: %s" % exc)
+    quadrant = compat_enum(
+        "LabelQuadrantPosition", "Over", QgsPalLayerSettings, "QuadrantOver")
+    if quadrant is not None:
+        try:
+            settings.quadOffset = quadrant
+        except (TypeError, ValueError) as exc:
+            _log("quadOffset Over no aplicado: %s" % exc)
 
     fmt = QgsTextFormat()
     fmt.setFont(QFont("Arial"))
     fmt.setSize(float(cfg["text_size"]))
-    fmt.setSizeUnit(QgsUnitTypes.RenderMapUnits)
+    fmt.setSizeUnit(compat_enum(
+        "RenderUnit", "MapUnits", QgsUnitTypes, "RenderMapUnits"))
     fmt.setColor(QColor(cfg.get("color", "#111111")))
     buf = QgsTextBufferSettings()
     buf.setEnabled(True)
     buf.setSize(0.8)
-    buf.setSizeUnit(QgsUnitTypes.RenderMillimeters)
+    buf.setSizeUnit(compat_enum(
+        "RenderUnit", "Millimeters", QgsUnitTypes, "RenderMillimeters"))
     buf.setColor(QColor(255, 255, 255, 220))
     fmt.setBuffer(buf)
     settings.setFormat(fmt)
 
+    prop_holder = getattr(QgsPalLayerSettings, "Property", None)
+    if prop_holder is not None and hasattr(prop_holder, "LabelRotation"):
+        rot_key = prop_holder.LabelRotation
+    else:
+        rot_key = QgsPalLayerSettings.LabelRotation
     ddp = QgsPropertyCollection()
-    ddp.setProperty(QgsPalLayerSettings.LabelRotation,
-                    QgsProperty.fromField("angulo"))
+    ddp.setProperty(rot_key, QgsProperty.fromField("angulo"))
     settings.setDataDefinedProperties(ddp)
 
     layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))

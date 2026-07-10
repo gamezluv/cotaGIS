@@ -22,44 +22,68 @@ from qgis.gui import (
 )
 
 from . import dim_engine
+from .dim_engine import compat_enum, _log
 
 
 # (id, etiqueta, nº de clics; -1 = encadenado hasta clic derecho)
 DIM_MODES = [
-    ("lineal",    "Cota lineal (DIMLINEAR)", 3),
-    ("alineada",  "Cota alineada (DIMALIGNED)", 3),
-    ("continua",  "Cota continua (DIMCONTINUE)", -1),
-    ("baseline",  "Cota en línea base (DIMBASELINE)", -1),
-    ("angular",   "Cota angular (DIMANGULAR)", 4),
-    ("radial",    "Cota radial (DIMRADIUS)", 2),
+    ("lineal", "Cota lineal (DIMLINEAR)", 3),
+    ("alineada", "Cota alineada (DIMALIGNED)", 3),
+    ("continua", "Cota continua (DIMCONTINUE)", -1),
+    ("baseline", "Cota en línea base (DIMBASELINE)", -1),
+    ("angular", "Cota angular (DIMANGULAR)", 4),
+    ("radial", "Cota radial (DIMRADIUS)", 2),
     ("diametral", "Cota diametral (DIMDIAMETER)", 2),
-    ("arco",      "Cota de longitud de arco (DIMARC)", 3),
-    ("ordenada",  "Cota de coordenadas (DIMORDINATE)", 2),
+    ("arco", "Cota de longitud de arco (DIMARC)", 3),
+    ("ordenada", "Cota de coordenadas (DIMORDINATE)", 2),
 ]
 
 PROMPTS = {
-    "lineal":    ["Clic en el primer punto", "Clic en el segundo punto",
-                  "Clic en la posición de la cota (arrastre H o V)"],
-    "alineada":  ["Clic en el primer punto", "Clic en el segundo punto",
-                  "Clic en la posición de la línea de cota"],
-    "continua":  ["Clic en el primer punto", "Clic en el segundo punto",
-                  "Clic en la posición de la cota",
-                  "Siguiente punto de la cadena (clic derecho = terminar)"],
-    "baseline":  ["Clic en el punto base", "Clic en el segundo punto",
-                  "Clic en la posición de la primera cota",
-                  "Siguiente punto desde la base (clic derecho = terminar)"],
-    "angular":   ["Clic en el vértice del ángulo",
-                  "Clic en un punto del primer lado",
-                  "Clic en un punto del segundo lado",
-                  "Clic en la posición del arco de cota"],
-    "radial":    ["Clic en el centro", "Clic en un punto de la curva"],
-    "diametral": ["Clic en un punto del círculo",
-                  "Clic en el punto diametralmente opuesto"],
-    "arco":      ["Clic en el inicio del arco",
-                  "Clic en un punto intermedio del arco",
-                  "Clic en el fin del arco"],
-    "ordenada":  ["Clic en el punto a coordinar",
-                  "Clic en la posición de la etiqueta"],
+    "lineal": [
+        "Clic en el primer punto",
+        "Clic en el segundo punto",
+        "Clic en la posición de la cota (arrastre H o V)",
+    ],
+    "alineada": [
+        "Clic en el primer punto",
+        "Clic en el segundo punto",
+        "Clic en la posición de la línea de cota",
+    ],
+    "continua": [
+        "Clic en el primer punto",
+        "Clic en el segundo punto",
+        "Clic en la posición de la cota",
+        "Siguiente punto de la cadena (clic derecho = terminar)",
+    ],
+    "baseline": [
+        "Clic en el punto base",
+        "Clic en el segundo punto",
+        "Clic en la posición de la primera cota",
+        "Siguiente punto desde la base (clic derecho = terminar)",
+    ],
+    "angular": [
+        "Clic en el vértice del ángulo",
+        "Clic en un punto del primer lado",
+        "Clic en un punto del segundo lado",
+        "Clic en la posición del arco de cota",
+    ],
+    "radial": [
+        "Clic en el centro",
+        "Clic en un punto de la curva",
+    ],
+    "diametral": [
+        "Clic en un punto del círculo",
+        "Clic en el punto diametralmente opuesto",
+    ],
+    "arco": [
+        "Clic en el inicio del arco",
+        "Clic en un punto intermedio del arco",
+        "Clic en el fin del arco",
+    ],
+    "ordenada": [
+        "Clic en el punto a coordinar",
+        "Clic en la posición de la etiqueta",
+    ],
 }
 
 
@@ -98,32 +122,48 @@ class DimensionTool(QgsMapTool):
     def apply_snap_config(self):
         cfg = self.plugin.cfg
         sc = QgsSnappingConfig(QgsProject.instance())
-        sc.setMode(QgsSnappingConfig.AllLayers)
+        mode = compat_enum(
+            "SnappingMode", "AllLayers", QgsSnappingConfig, "AllLayers")
+        if mode is not None:
+            sc.setMode(mode)
         sc.setTolerance(float(cfg.get("snap_tol_px", 12)))
-        sc.setUnits(QgsTolerance.Pixels)
+        units = compat_enum(
+            "MapToolUnit", "Pixels", QgsTolerance, "Pixels")
+        if units is not None:
+            sc.setUnits(units)
         sc.setIntersectionSnapping(bool(cfg.get("snap_intersection", True)))
 
+        # (miembro moderno de Qgis.SnappingType, alias antiguo, clave cfg)
         pairs = [
-            ("VertexFlag", "snap_vertex"),
-            ("SegmentFlag", "snap_segment"),
-            ("MiddleOfSegmentFlag", "snap_middle"),
-            ("LineEndpointFlag", "snap_endpoint"),
-            ("CentroidFlag", "snap_centroid"),
-            ("AreaFlag", "snap_area"),
+            ("Vertex", "VertexFlag", "snap_vertex"),
+            ("Segment", "SegmentFlag", "snap_segment"),
+            ("MiddleOfSegment", "MiddleOfSegmentFlag", "snap_middle"),
+            ("LineEndpoint", "LineEndpointFlag", "snap_endpoint"),
+            ("Centroid", "CentroidFlag", "snap_centroid"),
+            ("Area", "AreaFlag", "snap_area"),
         ]
         flags = None
-        for attr, key in pairs:
-            if cfg.get(key) and hasattr(QgsSnappingConfig, attr):
-                v = getattr(QgsSnappingConfig, attr)
-                flags = v if flags is None else (flags | v)
+        for new_name, old_name, key in pairs:
+            if not cfg.get(key):
+                continue
+            v = compat_enum(
+                "SnappingType", new_name, QgsSnappingConfig, old_name)
+            if v is None:
+                continue
+            flags = v if flags is None else (flags | v)
 
         enabled = bool(cfg.get("snap_enabled", True)) and (
             flags is not None or cfg.get("snap_intersection"))
         sc.setEnabled(enabled)
         if flags is not None:
+            applied = False
             if hasattr(sc, "setTypeFlag"):
-                sc.setTypeFlag(flags)
-            elif hasattr(QgsSnappingConfig, "VertexAndSegment"):
+                try:
+                    sc.setTypeFlag(flags)
+                    applied = True
+                except (TypeError, ValueError) as exc:
+                    _log("setTypeFlag no aplicado: %s" % exc)
+            if not applied and hasattr(QgsSnappingConfig, "VertexAndSegment"):
                 sc.setType(QgsSnappingConfig.VertexAndSegment)
         self.snap_utils.setConfig(sc)
 
